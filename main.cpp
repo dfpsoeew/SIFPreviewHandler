@@ -982,13 +982,5 @@ vector<double> calculatePercentiles(const vector<double>& data, const vector<dou
 wstring to_wstring_custom(double value) {
 	wstringstream wss;
 	wss << value;
-	wstring result = wss.str();
-
-	// Remove trailing zeros
-	size_t found = result.find_last_not_of(L'0');
-	if (found != wstring::npos) {
-		result = result.substr(0, found + 1);
-	}
-
-	return result;
+	return wss.str();
 }

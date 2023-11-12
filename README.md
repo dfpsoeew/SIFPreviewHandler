@@ -30,6 +30,9 @@ To uninstall the SIF Preview Handler, follow these steps:
 
 ## Versions
 
+### 1.1 (2023-11-12)
+- Fixed: Exposure time was displayed incorrectly
+
 ### 1.0 (2023-09-12)
 - Initial version
 
