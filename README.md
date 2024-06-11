@@ -30,6 +30,13 @@ To uninstall the SIF Preview Handler, follow these steps:
 
 ## Versions
 
+### 1.2 (2024-06-11)
+- Fixed: Wavelength was displayed incorrectly when horizontal binning was active
+- Changed: In image mode, the vertical axis now shows the ROI pixel position on the chip instead of the ROI size
+- Changed: Vertical axis values are rounded to integer precision
+- Improved: Slit width and grating lines are shown as additional properties, using the latest .SIF API from Andor
+- Improved: Center wavelength setting is displayed in the bottom center of the preview plot
+
 ### 1.1 (2023-11-12)
 - Fixed: Exposure time was displayed incorrectly
 
@@ -68,6 +75,5 @@ To build **SIFPreviewHandler.dll**, you need to add several files to the project
 
 ## ToDo
 
-- Investigate options for displaying the grating used to record the spectrum. Currently there is no way to get this information through the Andor interfaces.
 - Fix non-linear scaling problem in color map plots where wavelength values are displayed on the x-axis instead of pixel numbers. Resampling the bitmap may be required to resolve this.
 - In the case of a kinetic series, create a user interface that allows scrolling through the individual spectra.

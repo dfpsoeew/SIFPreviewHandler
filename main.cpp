@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <d2d1.h>
 #include <dwrite.h>
+#include <cmath>
 using namespace std;
 
 // Set up plot parameters
@@ -34,8 +35,9 @@ const int labelmargin = 10; // Distance of text to axis box
 const int fontsize = 14; // Font size in pixel
 const int minimumaxisbox = 50; // Minimum size of the axis box
 const int maximumtextbox = 200; // Maximum width of the text box
-const int maximumtextboxheight = 70; // Maximum height of the text box
-const int decimalPlaces = 3; // Define the number of decimal places
+const int maximumtextboxheight = 120; // Maximum height of the text box
+const int decimalPlacesX = 3; // Define the number of decimal places for the x-axis
+const int decimalPlacesY = 0; // Define the number of decimal places for the y-axis
 
 // Create colors
 const D2D1_COLOR_F whiteColor = D2D1::ColorF(D2D1::ColorF::White);
@@ -76,8 +78,9 @@ public:
 	ID2D1SolidColorBrush* pBlueBrush = nullptr;
 	ID2D1SolidColorBrush* pInfoBrush = nullptr;
 
-	AT_U32 atu32_ret, atu32_noFrames, atu32_frameSize, atu32_noSubImages, s_width, s_height;
-	double ExposureTime;
+	AT_U32 atu32_ret = 0, atu32_noFrames = 0, atu32_frameSize = 0, atu32_noSubImages = 0, s_width = 0, s_height = 0;
+	AT_U32 atu32_left = 0, atu32_bottom = 0, atu32_right = 0, atu32_top = 0, atu32_hBin = 0, atu32_vBin = 0;
+	double ExposureTime = 0, SlitWidth = 0, GratLines = 0, CenterWavelength = 0;
 
 	// Constructor
 	CSIFPreviewHandler() : _cRef(1), _hwndParent(NULL), _hwndPreview(NULL), _punkSite(NULL)
@@ -482,6 +485,9 @@ void CSIFPreviewHandler::ReadSIFData(HWND hwnd, char* filename) {
 	float* imageBuffer = nullptr;
 	double* wavelengthBuffer = nullptr;
 	char* sz_exposureTime = new char[MAX_PATH];
+	char* sz_slitWidth = new char[MAX_PATH];
+	char* sz_gratLines = new char[MAX_PATH];
+	char* sz_centerWavelength = new char[MAX_PATH];
 
 	// Set file access mode
 	atu32_ret = ATSIF_SetFileAccessMode(ATSIF_ReadAll);
@@ -519,7 +525,6 @@ void CSIFPreviewHandler::ReadSIFData(HWND hwnd, char* filename) {
 	}
 
 	// Get sub-image info
-	AT_U32 atu32_left, atu32_bottom, atu32_right, atu32_top, atu32_hBin, atu32_vBin;
 	atu32_ret = ATSIF_GetSubImageInfo(ATSIF_Signal,
 		0,
 		&atu32_left, &atu32_bottom,
@@ -545,7 +550,7 @@ void CSIFPreviewHandler::ReadSIFData(HWND hwnd, char* filename) {
 
 	// Get wavelength data
 	for (unsigned int i = 0; i < s_width; ++i) {
-		atu32_ret = ATSIF_GetPixelCalibration(ATSIF_Signal, ATSIF_CalibX, static_cast<AT_32>(i) + 1, &wavelengthBuffer[i]);
+		atu32_ret = ATSIF_GetPixelCalibration(ATSIF_Signal, ATSIF_CalibX, static_cast<AT_32>(i) * atu32_hBin + atu32_left, &wavelengthBuffer[i]);
 		if (atu32_ret != ATSIF_SUCCESS) {
 			ShowErrorMessage(hwnd, "Could not Get Wavelength. Error: " + std::to_string(atu32_ret));
 			goto Cleanup;
@@ -559,6 +564,30 @@ void CSIFPreviewHandler::ReadSIFData(HWND hwnd, char* filename) {
 		goto Cleanup;
 	}
 	ExposureTime = atof(sz_exposureTime);
+
+	// Get slit width
+	atu32_ret = ATSIF_GetPropertyValue(ATSIF_Signal, "SpectrographSlit1", sz_slitWidth, MAX_PATH);
+	if (atu32_ret != ATSIF_SUCCESS) {
+		ShowErrorMessage(hwnd, "Could not Get Property Value. Error: " + std::to_string(atu32_ret));
+		goto Cleanup;
+	}
+	SlitWidth = atof(sz_slitWidth);
+
+	// Get grating lines
+	atu32_ret = ATSIF_GetPropertyValue(ATSIF_Signal, "SpectrographGratLines", sz_gratLines, MAX_PATH);
+	if (atu32_ret != ATSIF_SUCCESS) {
+		ShowErrorMessage(hwnd, "Could not Get Property Value. Error: " + std::to_string(atu32_ret));
+		goto Cleanup;
+	}
+	GratLines = atof(sz_gratLines);
+
+	// Get center wavelength
+	atu32_ret = ATSIF_GetPropertyValue(ATSIF_Signal, "SpectrographWavelength", sz_centerWavelength, MAX_PATH);
+	if (atu32_ret != ATSIF_SUCCESS) {
+		ShowErrorMessage(hwnd, "Could not Get Property Value. Error: " + std::to_string(atu32_ret));
+		goto Cleanup;
+	}
+	CenterWavelength = atof(sz_centerWavelength);
 
 	// Close file
 	atu32_ret = ATSIF_CloseFile();
@@ -581,6 +610,9 @@ Cleanup:
 	delete[] wavelengthBuffer;
 	delete[] sz_error;
 	delete[] sz_exposureTime;
+	delete[] sz_slitWidth;
+	delete[] sz_gratLines;
+	delete[] sz_centerWavelength;
 } // ReadSIFData
 
 // This method forwards window messages to the member function PreviewWindowSubclassProc
@@ -593,6 +625,7 @@ LRESULT CALLBACK CSIFPreviewHandler::PreviewWindowStaticSubclassProc(HWND hwnd, 
 }
 
 wstring to_wstring_custom(double value);
+double roundDigits(double value, int digits);
 
 // This method handles various window messages, including resizing and painting
 LRESULT CALLBACK CSIFPreviewHandler::PreviewWindowSubclassProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR /* uIdSubclass */, DWORD_PTR dwRefData)
@@ -670,8 +703,8 @@ LRESULT CALLBACK CSIFPreviewHandler::PreviewWindowSubclassProc(HWND hwnd, UINT u
 			}
 			else {
 				// Find y data range
-				minY = 1;
-				maxY = (double)s_height;
+				minY = atu32_bottom;
+				maxY = atu32_top;
 
 				// White on black background for colormap
 				pInfoBrush = pWhiteBrush;
@@ -698,8 +731,8 @@ LRESULT CALLBACK CSIFPreviewHandler::PreviewWindowSubclassProc(HWND hwnd, UINT u
 				}
 				else {
 					wchar_t formatString[10];
-					swprintf_s(formatString, L"%%.%dlf", decimalPlaces); // Create the format string
-					swprintf_s(text, formatString, value); // Use the format string
+					swprintf_s(formatString, L"%%.%dlf", decimalPlacesX); // Create the format string
+					swprintf_s(text, formatString, roundDigits(value, decimalPlacesX)); // Use the format string
 				}
 
 				// Create the text layout
@@ -726,6 +759,43 @@ LRESULT CALLBACK CSIFPreviewHandler::PreviewWindowSubclassProc(HWND hwnd, UINT u
 				SafeRelease(pTextLayout);
 			}
 
+			// Draw the center wavelength
+			if (CenterWavelength != -1) {
+				WCHAR text[32]; // Assuming a reasonable buffer size
+				double value = CenterWavelength;
+				if (floor(value) == value) {
+					swprintf_s(text, L"%.0lf nm", value); // No decimal places for integers
+				}
+				else {
+					wchar_t formatString[10];
+					swprintf_s(formatString, L"%%.%dlf nm", decimalPlacesX); // Create the format string
+					swprintf_s(text, formatString, roundDigits(value, decimalPlacesX)); // Use the format string
+				}
+
+				// Create the text layout
+				pDWriteFactory->CreateTextLayout(
+					text,
+					wcslen(text),
+					pTextFormat,
+					maximumtextbox,
+					fontsize,
+					&pTextLayout
+				);
+
+				// Set text alignment to center
+				pTextLayout->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+
+				// Draw the centered text
+				pRenderTarget->DrawTextLayout(
+					D2D1::Point2F(static_cast<FLOAT>(XxCoordinates[0] + XxCoordinates[1]) / 2.0f - (maximumtextbox / 2.0f), static_cast<FLOAT>(XyCoordinates[1])),
+					pTextLayout,
+					pBlackBrush
+				);
+
+				// Release the text layout
+				SafeRelease(pTextLayout);
+			}
+
 			// Draw the y strings
 			for (size_t i = 0; i < sizeof(Yvalues) / sizeof(Yvalues[0]); ++i) {
 				WCHAR text[32]; // Assuming a reasonable buffer size
@@ -735,8 +805,8 @@ LRESULT CALLBACK CSIFPreviewHandler::PreviewWindowSubclassProc(HWND hwnd, UINT u
 				}
 				else {
 					wchar_t formatString[10];
-					swprintf_s(formatString, L"%%.%dlf", decimalPlaces); // Create the format string
-					swprintf_s(text, formatString, value); // Use the format string
+					swprintf_s(formatString, L"%%.%dlf", decimalPlacesY); // Create the format string
+					swprintf_s(text, formatString, roundDigits(value, decimalPlacesY)); // Use the format string
 				}
 
 				// Create the text layout
@@ -770,12 +840,14 @@ LRESULT CALLBACK CSIFPreviewHandler::PreviewWindowSubclassProc(HWND hwnd, UINT u
 
 			// Display details only if the window is big enough
 			if ((width > maximumtextbox) && (height > maximumtextboxheight)) {
-				vector<wstring> labels = { L"Frames:", L"Sub Images:", L"Pixels:" , L"Exposure Time:" };
+				vector<wstring> labels = { L"Frames:", L"Sub Images:", L"Pixels:", L"Exposure Time:", L"Slit:", L"Grating:" };
 				vector<wstring> values = {
 					to_wstring(atu32_noFrames),
 					to_wstring(atu32_noSubImages),
 					to_wstring(s_width) + L" x " + to_wstring(s_height),
-					to_wstring_custom(ExposureTime) + L" s"
+					to_wstring_custom(ExposureTime) + L" s",
+					(SlitWidth == -1 ? L"N/A" : to_wstring_custom(SlitWidth) + L" �m"),
+					(GratLines == -1 ? L"N/A" : to_wstring_custom(GratLines) + L" mm" + std::wstring(1, L'\u207B') + std::wstring(1, L'\u00B9'))
 				};
 
 				for (size_t i = 0; i < labels.size(); ++i) {
@@ -983,4 +1055,27 @@ wstring to_wstring_custom(double value) {
 	wstringstream wss;
 	wss << value;
 	return wss.str();
+}
+
+/**
+ * roundDigits: Rounds a double value to a specified number of digits after the decimal point.
+ *
+ * This function rounds a double value to the specified number of digits after the decimal point.
+ * It multiplies the value by 10^digits, rounds the result to the nearest integer, and then divides
+ * it by 10^digits to round the value to the specified number of digits.
+ *
+ * @param value The double value to be rounded.
+ * @param digits The number of digits after the decimal point to round to.
+ * @return The rounded double value.
+ *
+ * Example usage:
+ * \code{.cpp}
+ * double value = 12.3456789;
+ * double roundedValue = roundDigits(value, 3); // Rounds 'value' to 3 decimal places
+ * wcout << roundedValue << endl;
+ * \endcode
+ */
+double roundDigits(double value, int digits) {
+	double factor = pow(10, digits);
+	return round(value * factor) / factor;
 }
