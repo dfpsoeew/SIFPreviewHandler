@@ -1,14 +1,14 @@
 # SIFPreviewHandler - SIF Preview Handler for Windows Explorer
 
-This preview handler allows viewing spectra stored in the .sif file format directly in the preview pane of Windows Explorer or other compatible preview handler hosts. It uses proprietary library files from the [SIFReaderSDK](https://andor.oxinst.com/downloads/view/viewer:-sif-reader-sdk-2.104.30065.0), [Andor Solis](https://andor.oxinst.com/downloads/view/andor-solis-64-bit-4.32.30065.0), or [Andor SDK](https://andor.oxinst.com/downloads/view/andor-sdk-2.104.30084.0) installations. Please note that it has been developed and tested on a Windows 10 system (version 10.0.19045 Build 19045) and its compatibility with other Windows-based systems cannot be guaranteed. It is also not compatible with systems older than Windows Vista.
+This preview handler allows viewing spectra stored in the .sif file format directly in the preview pane of Windows Explorer. It uses proprietary library files from the [SIFReaderSDK](https://andor.oxinst.com/downloads/view/viewer:-sif-reader-sdk-2.104.30065.0), which are also typically included with [Andor Solis](https://andor.oxinst.com/downloads/view/andor-solis-64-bit-4.32.30065.0) or [Andor SDK](https://andor.oxinst.com/downloads/view/andor-sdk-2.104.30167.0) installations. It has been developed and tested on a Windows 11 system (Version 10.0.22631 Build 22631), and its compatibility with other Windows-based systems cannot be guaranteed. Additionally, it is not compatible with systems older than Windows Vista.
 
 ![Preview Example for FVB and Image Mode Spectrum](example.png)
 
 ## Files
 
 - **SIFPreviewHandler.dll**: The main preview handler library file.
-- **ATSIFIO64.dll**: Proprietary library file provided by Andor (see also sec. '[Development](#development)' below).
-- **atspooler.dll**: Proprietary library file provided by Andor (see also sec. '[Development](#development)' below).
+- **ATSIFIO64.dll**: Proprietary library file provided by Andor (see also sec. [Development](#development) below).
+- **atspooler.dll**: Proprietary library file provided by Andor (see also sec. [Development](#development) below).
 - **install.bat**: Script to register the preview handler with the operating system.
 - **uninstall.bat**: Script to unregister the preview handler from the operating system.
 
@@ -16,7 +16,7 @@ This preview handler allows viewing spectra stored in the .sif file format direc
 
 To install the SIF Preview Handler, follow these steps:
 
-1. Download the latest [release](https://github.com/dfpsoeew/SIFPreviewHandler/releases). The archive `SIFPreviewHandler.zip` contains all the files mentioned in sec. '[Files](#files)' above.
+1. Download the latest [release](https://github.com/dfpsoeew/SIFPreviewHandler/releases). The archive `SIFPreviewHandler.zip` contains all the files mentioned in sec. [Files](#files) above.
 2. Unpack the files into a folder on your system. This folder must remain present for the preview handler to work and cannot be deleted until the handler is uninstalled.
 3. Run **install.bat** (double click) to register the preview handler. Note that the screen may turn black during the installation process as Windows Explorer is restarted.
 4. Enable the preview pane in Windows Explorer by clicking the *View* tab in any Explorer window and selecting *Preview pane*.
@@ -29,6 +29,11 @@ To uninstall the SIF Preview Handler, follow these steps:
 2. All copied files can now be deleted manually.
 
 ## Versions
+
+### 1.3 (2026-07-05)
+- Fixed: File loading errors are now caught and will not crash the preview handler
+- Improved: In image mode, use nearest neighbor interpolation to avoid blurry images at low pixel sizes
+- Improved: Error messages can now be read by attaching a debugger to the preview handler process
 
 ### 1.2 (2024-06-11)
 - Fixed: Wavelength was displayed incorrectly when horizontal binning was active
@@ -49,18 +54,18 @@ This project relies heavily on the example provided by Microsoft, which can be f
 
 ### Get the necessary files
 
-To build **SIFPreviewHandler.dll**, you need to add several files to the project folder yourself due to license agreements. You can get them from the free downloadable packages [SIFReaderSDK](https://andor.oxinst.com/downloads/view/viewer:-sif-reader-sdk-2.104.30065.0), [Andor Solis](https://andor.oxinst.com/downloads/view/andor-solis-64-bit-4.32.30065.0), or [Andor SDK](https://andor.oxinst.com/downloads/view/andor-sdk-2.104.30084.0). They are located in the respective installation folder `C:\Program Files\<Andor Software Name>\SIF Reader\SIFReaderSDK\`. These files are required:
+To build **SIFPreviewHandler.dll**, you need to add several files to the project folder yourself due to license agreements. You can get them from the free downloadable packages [SIFReaderSDK](https://andor.oxinst.com/downloads/view/viewer:-sif-reader-sdk-2.104.30065.0), [Andor Solis](https://andor.oxinst.com/downloads/view/andor-solis-64-bit-4.32.30065.0), or [Andor SDK](https://andor.oxinst.com/downloads/view/andor-sdk-2.104.30167.0). They are located in the respective installation folder `C:\Program Files\<Andor Software Name>\SIF Reader\SIFReaderSDK\`. These files are required:
 
 - **ATLibraryExport.h**
 - **ATPrimitiveTypes.h**
 - **ATSIFErrorCodes.h**
 - **ATSIFIO.h**
 - **ATSIFIO64.a**
-- **ATSIFIO64.dll** (Provided in this [release](https://github.com/dfpsoeew/SIFPreviewHandler/releases) as well, since it will be released in a future [Andor Driver Pack](https://andor.oxinst.com/downloads/view/andor-driver-pack-2.104.30065.0-(ccd,iccd-emccd)), which does not require any license agreements)
+- **ATSIFIO64.dll** (Provided in this [release](https://github.com/dfpsoeew/SIFPreviewHandler/releases) as well, since it will be released in a future [Andor Driver Pack](https://andor.oxinst.com/downloads/view/andor-driver-pack-2.104.30167.0-(ccd,iccd-emccd)), which does not require any license agreements)
 - **ATSIFIO64.lib**
 - **ATSIFProperties.h**
 - **ATSIFTypes.h**
-- **atspooler.dll** (Provided in this [release](https://github.com/dfpsoeew/SIFPreviewHandler/releases) as well, since it will be released in a future [Andor Driver Pack](https://andor.oxinst.com/downloads/view/andor-driver-pack-2.104.30065.0-(ccd,iccd-emccd)), which does not require any license agreements)
+- **atspooler.dll** (Provided in this [release](https://github.com/dfpsoeew/SIFPreviewHandler/releases) as well, since it will be released in a future [Andor Driver Pack](https://andor.oxinst.com/downloads/view/andor-driver-pack-2.104.30167.0-(ccd,iccd-emccd)), which does not require any license agreements)
 
 ### Build the solution (similar to [this](https://github.com/microsoft/Windows-classic-samples/tree/main/Samples/Win7Samples/winui/shell/appshellintegration/RecipePreviewHandler) example)
 

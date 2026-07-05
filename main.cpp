@@ -45,16 +45,38 @@ const D2D1_COLOR_F blackColor = D2D1::ColorF(D2D1::ColorF::Black);
 const D2D1_COLOR_F blueColor = D2D1::ColorF(D2D1::ColorF::Blue);
 
 // This method calculates and returns the width of a RECT structure
-inline int RECTWIDTH(const RECT& rc)
+inline static int RECTWIDTH(const RECT& rc)
 {
 	return (rc.right - rc.left);
 }
 
 // This method calculates and returns the heigth of a RECT structure
-inline int RECTHEIGHT(const RECT& rc)
+inline static int RECTHEIGHT(const RECT& rc)
 {
 	return (rc.bottom - rc.top);
 }
+
+/**
+ * ShowErrorMessage: Logs an error message for debugging/logging purposes.
+ *
+ * Outputs the message via OutputDebugStringA, prefixed with
+ * "PreviewHandler Error: ". Viewable in a debugger.
+ *
+ * @param message The error message text to be reported.
+ *
+ * Usage:
+ * Call this function to report error messages during preview handling.
+ * Messages can be viewed using a debugger or tools such as DebugView.
+ *
+ * Example:
+ *   ShowErrorMessage("An error occurred while processing data.");
+ */
+static void ShowErrorMessage(const std::string& message)
+{
+	OutputDebugStringA("PreviewHandler Error: ");
+	OutputDebugStringA(message.c_str());
+	OutputDebugStringA("\n");
+} // ShowErrorMessage
 
 class CSIFPreviewHandler : public IObjectWithSite,
 	public IPreviewHandler,
@@ -89,14 +111,24 @@ public:
 		_rcParent = RECT{ 0, 0, 0, 0 };
 
 		// Initialize Direct2D factory
-		D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &pFactory);
+		HRESULT hr = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &pFactory);
+		if (FAILED(hr))
+		{
+			ShowErrorMessage("Failed to create Direct2D factory.");
+			pFactory = nullptr;
+		}
 
 		// Initialize DirectWrite
-		HRESULT hr = DWriteCreateFactory(
+		hr = DWriteCreateFactory(
 			DWRITE_FACTORY_TYPE_SHARED, // Use DWRITE_FACTORY_TYPE_SHARED for a shared factory
 			__uuidof(IDWriteFactory),
 			reinterpret_cast<IUnknown**>(&pDWriteFactory)
 		);
+		if (FAILED(hr))
+		{
+			ShowErrorMessage("Failed to create DirectWrite factory.");
+			pDWriteFactory = nullptr;
+		}
 	}
 
 	// Destructor
@@ -177,8 +209,8 @@ public:
 	IFACEMETHODIMP Initialize(LPCWSTR pszFilePath, DWORD);
 
 	// Custom
-	ID2D1Bitmap* MyCreateBitmap(vector<double> cData, double lPctl, double uPctl);
-	void ReadSIFData(HWND hwnd, char* filename);
+	ID2D1Bitmap* MyCreateBitmap(const vector<double>& cData, double lPctl, double uPctl);
+	bool ReadSIFData(char* filename);
 	LRESULT CALLBACK PreviewWindowSubclassProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData);
 	static LRESULT CALLBACK PreviewWindowStaticSubclassProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData);
 
@@ -399,7 +431,7 @@ vector<double> calculatePercentiles(const vector<double>& data, const vector<dou
  *   // Don't forget to release the 'bitmap' when done.
  *   SafeRelease(bitmap);
  */
-ID2D1Bitmap* CSIFPreviewHandler::MyCreateBitmap(vector<double> cData, double lPctl, double uPctl) {
+ID2D1Bitmap* CSIFPreviewHandler::MyCreateBitmap(const vector<double>& cData, double lPctl, double uPctl) {
 	// Find c data range
 	//double minC = *min_element(cData.begin(), cData.end());
 	//double maxC = *max_element(cData.begin(), cData.end());
@@ -416,48 +448,26 @@ ID2D1Bitmap* CSIFPreviewHandler::MyCreateBitmap(vector<double> cData, double lPc
 	D2D1_BITMAP_PROPERTIES bitmapProps = D2D1::BitmapProperties(
 		D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE));
 
-	pRenderTarget->CreateBitmap(bitmapSize, bitmapProps, &pBitmap);
+	HRESULT hr = pRenderTarget->CreateBitmap(bitmapSize, bitmapProps, &pBitmap);
+	if (FAILED(hr))
+		return nullptr;
 
 	D2D1_RECT_U rect = D2D1::RectU(0, 0, bitmapSize.width, bitmapSize.height);
 
 	// Calculate pixel values and create the bitmap
-	BYTE* pColors = new BYTE[bitmapSize.width * bitmapSize.height * 4];
+	vector<BYTE> pColors(static_cast<size_t>(bitmapSize.width) * bitmapSize.height * 4, 255);
 	for (UINT y = 0; y < bitmapSize.height; ++y) {
 		for (UINT x = 0; x < bitmapSize.width; ++x) {
 			for (UINT i = 0; i < 3; ++i) {
-				pColors[(bitmapSize.height - y - 1) * bitmapSize.width * 4 + x * 4 + i]
-					= mapC(cData[y * bitmapSize.width + x]); // Calculate intensity based on cData[ind]
+				pColors[(static_cast<size_t>(bitmapSize.height) - y - 1) * bitmapSize.width * 4 + static_cast<size_t>(x) * 4 + i]
+					= mapC(cData[static_cast<size_t>(y) * bitmapSize.width + x]); // Calculate intensity based on cData[ind]
 			}
 		}
 	}
 
-	pBitmap->CopyFromMemory(&rect, pColors, bitmapSize.width * sizeof(BYTE) * 4);
-	delete[] pColors;
+	pBitmap->CopyFromMemory(&rect, pColors.data(), bitmapSize.width * 4);
 	return pBitmap;
 } // MyCreateBitmap
-
-/**
- * ShowErrorMessage: Displays an error message in a message box.
- *
- * This function shows an error message using a message box with an error icon.
- * The provided message is displayed to the user.
- *
- * @param hwnd The handle to the parent window. The message box will be modal to this window.
- * @param message The error message text to be displayed.
- *
- * Usage:
- * Call this function to display error messages in a message box. The message box will be modal to
- * the specified parent window. The provided error message will be shown to the user with an error icon.
- *
- * Example:
- *   HWND mainWindow = GetMainWindowHandle(); // Replace with your actual window handle
- *   std::string errorMsg = "An error occurred while processing data.";
- *   ShowErrorMessage(mainWindow, errorMsg);
- *   // The message box will display the error message to the user.
- */
-void ShowErrorMessage(HWND hwnd, const std::string& message) {
-	MessageBoxA(hwnd, message.c_str(), "Error", MB_ICONERROR | MB_OK);
-} // ShowErrorMessage
 
 /**
  * ReadSIFData: Reads data from an SIF file and populates xData and yData vectors.
@@ -465,22 +475,21 @@ void ShowErrorMessage(HWND hwnd, const std::string& message) {
  * This function reads image and wavelength data from the specified SIF file using the ATSIF library.
  * It populates the global vectors xData (for wavelength data) and yData (for image data).
  *
- * @param hwnd The handle to the parent window, used for displaying error messages.
  * @param filename The name of the SIF file to read data from.
- *
+ * @return True if the data was read successfully, false otherwise.
+ * 
  * Usage:
- * Call this function with the parent window handle and the name of the SIF file to read data from.
+ * Call this function with the name of the SIF file to read data from.
  * It performs various ATSIF library calls to retrieve frame and wavelength data. In case of errors
- * at any step, error messages are shown using message boxes. The data is then converted to vectors
+ * at any step, error messages are logged. The data is then converted to vectors
  * and stored in the global xData and yData vectors for further processing.
  *
  * Example:
- *   HWND hwnd = GetParentWindow(); // Replace with an appropriate function to get the parent window handle.
  *   char* sifFilename = "example.sif";
- *   ReadSIFData(hwnd, sifFilename);
+ *   ReadSIFData(sifFilename);
  *   // After this call, xData and yData vectors will contain the wavelength and image data.
  */
-void CSIFPreviewHandler::ReadSIFData(HWND hwnd, char* filename) {
+bool CSIFPreviewHandler::ReadSIFData(char* filename) {
 	char* sz_error = new char[MAX_PATH];
 	float* imageBuffer = nullptr;
 	double* wavelengthBuffer = nullptr;
@@ -489,38 +498,46 @@ void CSIFPreviewHandler::ReadSIFData(HWND hwnd, char* filename) {
 	char* sz_gratLines = new char[MAX_PATH];
 	char* sz_centerWavelength = new char[MAX_PATH];
 
+	bool success = false;
+
 	// Set file access mode
 	atu32_ret = ATSIF_SetFileAccessMode(ATSIF_ReadAll);
 	if (atu32_ret != ATSIF_SUCCESS) {
-		ShowErrorMessage(hwnd, "Could not set File access Mode.");
+		ShowErrorMessage("Could not set File access Mode.");
 		goto Cleanup;
 	}
 
 	// Read from file
-	atu32_ret = ATSIF_ReadFromFile(filename);
-	if (atu32_ret != ATSIF_SUCCESS) {
-		ShowErrorMessage(hwnd, "Could not open File: " + std::string(filename) + ". Error: " + std::to_string(atu32_ret));
+	try {
+		atu32_ret = ATSIF_ReadFromFile(filename);
+		if (atu32_ret != ATSIF_SUCCESS) {
+			ShowErrorMessage("Could not open File: " + std::string(filename) + ". Error: " + std::to_string(atu32_ret));
+			goto Cleanup;
+		}
+	}
+	catch (...) {
+		ShowErrorMessage("Exception occurred while reading from file: " + std::string(filename));
 		goto Cleanup;
 	}
 
 	// Get number of frames
 	atu32_ret = ATSIF_GetNumberFrames(ATSIF_Signal, &atu32_noFrames);
 	if (atu32_ret != ATSIF_SUCCESS) {
-		ShowErrorMessage(hwnd, "Could not Get Number Frames. Error: " + std::to_string(atu32_ret));
+		ShowErrorMessage("Could not Get Number Frames. Error: " + std::to_string(atu32_ret));
 		goto Cleanup;
 	}
 
 	// Get frame size
 	atu32_ret = ATSIF_GetFrameSize(ATSIF_Signal, &atu32_frameSize);
 	if (atu32_ret != ATSIF_SUCCESS) {
-		ShowErrorMessage(hwnd, "Could not Get Frame Size. Error: " + std::to_string(atu32_ret));
+		ShowErrorMessage("Could not Get Frame Size. Error: " + std::to_string(atu32_ret));
 		goto Cleanup;
 	}
 
 	// Get number of sub-images
 	atu32_ret = ATSIF_GetNumberSubImages(ATSIF_Signal, &atu32_noSubImages);
 	if (atu32_ret != ATSIF_SUCCESS) {
-		ShowErrorMessage(hwnd, "Could not Get Number Sub Images. Error: " + std::to_string(atu32_ret));
+		ShowErrorMessage("Could not Get Number Sub Images. Error: " + std::to_string(atu32_ret));
 		goto Cleanup;
 	}
 
@@ -533,7 +550,7 @@ void CSIFPreviewHandler::ReadSIFData(HWND hwnd, char* filename) {
 	s_width = ((atu32_right - atu32_left) + 1) / atu32_hBin;
 	s_height = ((atu32_top - atu32_bottom) + 1) / atu32_vBin;
 	if (atu32_ret != ATSIF_SUCCESS) {
-		ShowErrorMessage(hwnd, "Could not Get Sub Image Info. Error: " + std::to_string(atu32_ret));
+		ShowErrorMessage("Could not Get Sub Image Info. Error: " + std::to_string(atu32_ret));
 		goto Cleanup;
 	}
 
@@ -544,7 +561,7 @@ void CSIFPreviewHandler::ReadSIFData(HWND hwnd, char* filename) {
 	// Get image data
 	atu32_ret = ATSIF_GetFrame(ATSIF_Signal, 0, imageBuffer, atu32_frameSize);
 	if (atu32_ret != ATSIF_SUCCESS) {
-		ShowErrorMessage(hwnd, "Could not Get Frame. Error: " + std::to_string(atu32_ret));
+		ShowErrorMessage("Could not Get Frame. Error: " + std::to_string(atu32_ret));
 		goto Cleanup;
 	}
 
@@ -552,7 +569,7 @@ void CSIFPreviewHandler::ReadSIFData(HWND hwnd, char* filename) {
 	for (unsigned int i = 0; i < s_width; ++i) {
 		atu32_ret = ATSIF_GetPixelCalibration(ATSIF_Signal, ATSIF_CalibX, static_cast<AT_32>(i) * atu32_hBin + atu32_left, &wavelengthBuffer[i]);
 		if (atu32_ret != ATSIF_SUCCESS) {
-			ShowErrorMessage(hwnd, "Could not Get Wavelength. Error: " + std::to_string(atu32_ret));
+			ShowErrorMessage("Could not Get Wavelength. Error: " + std::to_string(atu32_ret));
 			goto Cleanup;
 		}
 	}
@@ -560,7 +577,7 @@ void CSIFPreviewHandler::ReadSIFData(HWND hwnd, char* filename) {
 	// Get exposure time
 	atu32_ret = ATSIF_GetPropertyValue(ATSIF_Signal, "ExposureTime", sz_exposureTime, MAX_PATH);
 	if (atu32_ret != ATSIF_SUCCESS) {
-		ShowErrorMessage(hwnd, "Could not Get Property Value. Error: " + std::to_string(atu32_ret));
+		ShowErrorMessage("Could not Get Property Value. Error: " + std::to_string(atu32_ret));
 		goto Cleanup;
 	}
 	ExposureTime = atof(sz_exposureTime);
@@ -568,7 +585,7 @@ void CSIFPreviewHandler::ReadSIFData(HWND hwnd, char* filename) {
 	// Get slit width
 	atu32_ret = ATSIF_GetPropertyValue(ATSIF_Signal, "SpectrographSlit1", sz_slitWidth, MAX_PATH);
 	if (atu32_ret != ATSIF_SUCCESS) {
-		ShowErrorMessage(hwnd, "Could not Get Property Value. Error: " + std::to_string(atu32_ret));
+		ShowErrorMessage("Could not Get Property Value. Error: " + std::to_string(atu32_ret));
 		goto Cleanup;
 	}
 	SlitWidth = atof(sz_slitWidth);
@@ -576,7 +593,7 @@ void CSIFPreviewHandler::ReadSIFData(HWND hwnd, char* filename) {
 	// Get grating lines
 	atu32_ret = ATSIF_GetPropertyValue(ATSIF_Signal, "SpectrographGratLines", sz_gratLines, MAX_PATH);
 	if (atu32_ret != ATSIF_SUCCESS) {
-		ShowErrorMessage(hwnd, "Could not Get Property Value. Error: " + std::to_string(atu32_ret));
+		ShowErrorMessage("Could not Get Property Value. Error: " + std::to_string(atu32_ret));
 		goto Cleanup;
 	}
 	GratLines = atof(sz_gratLines);
@@ -584,7 +601,7 @@ void CSIFPreviewHandler::ReadSIFData(HWND hwnd, char* filename) {
 	// Get center wavelength
 	atu32_ret = ATSIF_GetPropertyValue(ATSIF_Signal, "SpectrographWavelength", sz_centerWavelength, MAX_PATH);
 	if (atu32_ret != ATSIF_SUCCESS) {
-		ShowErrorMessage(hwnd, "Could not Get Property Value. Error: " + std::to_string(atu32_ret));
+		ShowErrorMessage("Could not Get Property Value. Error: " + std::to_string(atu32_ret));
 		goto Cleanup;
 	}
 	CenterWavelength = atof(sz_centerWavelength);
@@ -592,9 +609,11 @@ void CSIFPreviewHandler::ReadSIFData(HWND hwnd, char* filename) {
 	// Close file
 	atu32_ret = ATSIF_CloseFile();
 	if (atu32_ret != ATSIF_SUCCESS) {
-		ShowErrorMessage(hwnd, "Could not Close File. Error: " + std::to_string(atu32_ret));
+		ShowErrorMessage("Could not Close File. Error: " + std::to_string(atu32_ret));
 		goto Cleanup;
 	}
+
+	success = true;
 
 	// Convert arrays to double vectors
 	for (size_t i = 0; i < s_width; ++i) {
@@ -613,6 +632,7 @@ Cleanup:
 	delete[] sz_slitWidth;
 	delete[] sz_gratLines;
 	delete[] sz_centerWavelength;
+	return success;
 } // ReadSIFData
 
 // This method forwards window messages to the member function PreviewWindowSubclassProc
@@ -666,7 +686,7 @@ LRESULT CALLBACK CSIFPreviewHandler::PreviewWindowSubclassProc(HWND hwnd, UINT u
 
 			// Use Direct2D to render the bitmap
 			if (pBitmap)
-				pRenderTarget->DrawBitmap(pBitmap, plotRect);
+				pRenderTarget->DrawBitmap(pBitmap, plotRect, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR);
 			pRenderTarget->DrawRectangle(&plotRect, pBlackBrush, 2.0f);
 
 			// Find x data range
@@ -846,7 +866,7 @@ LRESULT CALLBACK CSIFPreviewHandler::PreviewWindowSubclassProc(HWND hwnd, UINT u
 					to_wstring(atu32_noSubImages),
 					to_wstring(s_width) + L" x " + to_wstring(s_height),
 					to_wstring_custom(ExposureTime) + L" s",
-					(SlitWidth == -1 ? L"N/A" : to_wstring_custom(SlitWidth) + L" ï¿½m"),
+					(SlitWidth == -1 ? L"N/A" : to_wstring_custom(SlitWidth) + L" µm"),
 					(GratLines == -1 ? L"N/A" : to_wstring_custom(GratLines) + L" mm" + std::wstring(1, L'\u207B') + std::wstring(1, L'\u00B9'))
 				};
 
@@ -952,7 +972,9 @@ HRESULT CSIFPreviewHandler::_CreatePreviewWindow()
 		pRenderTarget->CreateSolidColorBrush(blueColor, &pBlueBrush);
 		pInfoBrush = pBlackBrush;
 
-		ReadSIFData(_hwndPreview, sz_fileName);
+		if (!ReadSIFData(sz_fileName)) {
+			return E_FAIL;
+		}
 
 		if (s_height != 1) {
 			pBitmap = MyCreateBitmap(yData, 1, 99);
@@ -1014,7 +1036,7 @@ vector<double> calculatePercentiles(const vector<double>& data, const vector<dou
 	// Calculate the index for each requested percentile
 	for (double p : percentiles) {
 		if (p < 0.0 || p > 100.0) {
-			cerr << "Error: Invalid percentile value " << p << ". Percentile values should be in the range [0, 100]." << endl;
+			ShowErrorMessage("Error: Invalid percentile value " + std::to_string(p) + ". Percentile values should be in the range [0, 100].");
 			continue;
 		}
 
